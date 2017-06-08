@@ -922,7 +922,12 @@ CheckedError Parser::ParseTable(const StructDef &struct_def, std::string *value,
   if (is_nested_list && fieldn != struct_def.fields.vec.size()) {
     return Error("wrong number of unnamed fields in table vector");
   }
+  return ProcessTableFields(fieldn, struct_def, value, ovalue);
+}
 
+CheckedError Parser::ProcessTableFields(size_t fieldn, 
+                                        const StructDef &struct_def, 
+                                        std::string *value, uoffset_t *ovalue) {
   // Check if all required fields are parsed.
   for (auto field_it = struct_def.fields.vec.begin();
             field_it != struct_def.fields.vec.end();
@@ -2031,14 +2036,27 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
       ECHECK(ParseProtoDecl());
     } else if (token_ == kTokenNameSpace) {
       ECHECK(ParseNamespace());
-    } else if (token_ == '{') {
+    } else if (token_ == '{' || token_ == '[') {
       if (!root_struct_def_)
         return Error("no root type set to parse json with");
       if (builder_.GetSize()) {
         return Error("cannot have more than one json object in a file");
       }
       uoffset_t toff;
-      ECHECK(ParseTable(*root_struct_def_, nullptr, &toff));
+      const bool top_level_list = token_ == '[';
+      if (top_level_list) {
+        if(root_struct_def_->fields.vec.size() > 1) {
+          return Error("top level list found with more than one field in schema");
+        }
+        auto field = root_struct_def_->fields.vec.front();
+        Value val = field->value;
+        ECHECK(ParseAnyValue(val, field, 0, root_struct_def_));
+        field_stack_.insert(field_stack_.rbegin().base(), 
+                            std::make_pair(val, field));
+        ECHECK(ProcessTableFields(1, *root_struct_def_, nullptr, &toff));
+      } else {
+        ECHECK(ParseTable(*root_struct_def_, nullptr, &toff));
+      }
       builder_.Finish(Offset<Table>(toff),
                 file_identifier_.length() ? file_identifier_.c_str() : nullptr);
     } else if (token_ == kTokenEnum) {

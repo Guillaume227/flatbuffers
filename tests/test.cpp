@@ -1113,6 +1113,13 @@ void NestedListTest() {
                         "{ F:[ [10,20], [30,40]] }"), true);
 }
 
+void TopLevelListTest() {
+  flatbuffers::Parser parser1;
+  TEST_EQ(parser1.Parse("struct Test { a:short; b:byte; } table T { F:[Test]; }"
+                        "root_type T;"
+                        "[ { a:10, \"b\":20}, {\"a\":30, b:40}]"), true);
+}
+
 void EnumStringsTest() {
   flatbuffers::Parser parser1;
   TEST_EQ(parser1.Parse("enum E:byte { A, B, C } table T { F:[E]; }"
@@ -1604,7 +1611,9 @@ int main(int /*argc*/, const char * /*argv*/[]) {
   UnknownFieldsTest();
   ParseUnionTest();
   ConformTest();
-
+  NestedListTest();
+  TopLevelListTest();
+  
   FlexBuffersTest();
 
   if (!testing_fails) {
