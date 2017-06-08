@@ -601,6 +601,10 @@ CheckedError Parser::AddField(StructDef &struct_def, const std::string &name,
 
 CheckedError Parser::ParseField(StructDef &struct_def) {
   std::string name = attribute_;
+
+  if (name == struct_def.name)
+    return Error("field name can not be the same as table/struct name");
+
   std::vector<std::string> dc = doc_comment_;
   EXPECT(kTokenIdentifier);
   EXPECT(':');
@@ -1939,8 +1943,7 @@ CheckedError Parser::SkipJsonString() {
 
 bool Parser::Parse(const char *source, const char **include_paths,
                    const char *source_filename) {
-  return !DoParse(source, include_paths, source_filename,
-                  source_filename).Check();
+  return !DoParse(source, include_paths, source_filename, nullptr).Check();
 }
 
 CheckedError Parser::DoParse(const char *source, const char **include_paths,
@@ -1948,8 +1951,8 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
                              const char *include_filename) {
   file_being_parsed_ = source_filename ? source_filename : "";
   if (source_filename &&
-      included_files_.find(include_filename) == included_files_.end()) {
-    included_files_[include_filename] = true;
+      included_files_.find(source_filename) == included_files_.end()) {
+    included_files_[source_filename] = include_filename ? include_filename : "";
     files_included_per_file_[source_filename] = std::set<std::string>();
   }
   if (!include_paths) {
@@ -1998,7 +2001,7 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
         return Error("unable to locate include file: " + name);
       if (source_filename)
         files_included_per_file_[source_filename].insert(filepath);
-      if (included_files_.find(name) == included_files_.end()) {
+      if (included_files_.find(filepath) == included_files_.end()) {
         // We found an include file that we have not parsed yet.
         // Load it and parse it.
         std::string contents;

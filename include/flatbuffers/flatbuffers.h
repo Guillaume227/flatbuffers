@@ -17,154 +17,9 @@
 #ifndef FLATBUFFERS_H_
 #define FLATBUFFERS_H_
 
-#include <assert.h>
+#include "flatbuffers/base.h"
 
-#ifndef ARDUINO
-#include <cstdint>
-#endif
-#include <cstddef>
-#include <cstdlib>
-#include <cstring>
-#include <string>
-#ifndef ARDUINO
-#include <utility>
-#else
-#include <utility.h>
-#endif
-#include <type_traits>
-#include <vector>
-#include <set>
-#include <algorithm>
-#include <memory>
-
-#ifdef _STLPORT_VERSION
-  #define FLATBUFFERS_CPP98_STL
-#endif
-#ifndef FLATBUFFERS_CPP98_STL
-  #include <functional>
-#endif
-
-/// @cond FLATBUFFERS_INTERNAL
-#if __cplusplus <= 199711L && \
-    (!defined(_MSC_VER) || _MSC_VER < 1600) && \
-    (!defined(__GNUC__) || \
-      (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ < 40400))
-  #error A C++11 compatible compiler with support for the auto typing is \
-         required for FlatBuffers.
-  #error __cplusplus _MSC_VER __GNUC__  __GNUC_MINOR__  __GNUC_PATCHLEVEL__
-#endif
-
-#if !defined(__clang__) && \
-    defined(__GNUC__) && \
-    (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ < 40600)
-  // Backwards compatability for g++ 4.4, and 4.5 which don't have the nullptr
-  // and constexpr keywords. Note the __clang__ check is needed, because clang
-  // presents itself as an older GNUC compiler.
-  #ifndef nullptr_t
-    const class nullptr_t {
-    public:
-      template<class T> inline operator T*() const { return 0; }
-    private:
-      void operator&() const;
-    } nullptr = {};
-  #endif
-  #ifndef constexpr
-    #define constexpr const
-  #endif
-#endif
-
-// The wire format uses a little endian encoding (since that's efficient for
-// the common platforms).
-#if defined(__s390x__)
-  #define FLATBUFFERS_LITTLEENDIAN 0
-#endif // __s390x__
-#if !defined(FLATBUFFERS_LITTLEENDIAN)
-  #if defined(__GNUC__) || defined(__clang__)
-    #ifdef __BIG_ENDIAN__
-      #define FLATBUFFERS_LITTLEENDIAN 0
-    #else
-      #define FLATBUFFERS_LITTLEENDIAN 1
-    #endif // __BIG_ENDIAN__
-  #elif defined(_MSC_VER)
-    #if defined(_M_PPC)
-      #define FLATBUFFERS_LITTLEENDIAN 0
-    #else
-      #define FLATBUFFERS_LITTLEENDIAN 1
-    #endif
-  #else
-    #error Unable to determine endianness, define FLATBUFFERS_LITTLEENDIAN.
-  #endif
-#endif // !defined(FLATBUFFERS_LITTLEENDIAN)
-
-#define FLATBUFFERS_VERSION_MAJOR 1
-#define FLATBUFFERS_VERSION_MINOR 6
-#define FLATBUFFERS_VERSION_REVISION 0
-#define FLATBUFFERS_STRING_EXPAND(X) #X
-#define FLATBUFFERS_STRING(X) FLATBUFFERS_STRING_EXPAND(X)
-
-#if (!defined(_MSC_VER) || _MSC_VER > 1600) && \
-    (!defined(__GNUC__) || (__GNUC__ * 100 + __GNUC_MINOR__ >= 407))
-  #define FLATBUFFERS_FINAL_CLASS final
-  #define FLATBUFFERS_OVERRIDE override
-#else
-  #define FLATBUFFERS_FINAL_CLASS
-  #define FLATBUFFERS_OVERRIDE
-#endif
-
-#if (!defined(_MSC_VER) || _MSC_VER >= 1900) && \
-    (!defined(__GNUC__) || (__GNUC__ * 100 + __GNUC_MINOR__ >= 406))
-  #define FLATBUFFERS_CONSTEXPR constexpr
-#else
-  #define FLATBUFFERS_CONSTEXPR
-#endif
-
-#if defined(__GXX_EXPERIMENTAL_CXX0X__) && __GNUC__ * 10 + __GNUC_MINOR__ >= 46 || \
-    defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
-  #define FLATBUFFERS_NOEXCEPT noexcept
-#else
-  #define FLATBUFFERS_NOEXCEPT
-#endif
-
-// NOTE: the FLATBUFFERS_DELETE_FUNC macro may change the access mode to
-// private, so be sure to put it at the end or reset access mode explicitly.
-#if (!defined(_MSC_VER) || _MSC_FULL_VER >= 180020827) && \
-    (!defined(__GNUC__) || (__GNUC__ * 100 + __GNUC_MINOR__ >= 404))
-  #define FLATBUFFERS_DELETE_FUNC(func) func = delete;
-#else
-  #define FLATBUFFERS_DELETE_FUNC(func) private: func;
-#endif
-
-#if defined(_MSC_VER)
-#pragma warning(push)
-#pragma warning(disable: 4127) // C4127: conditional expression is constant
-#endif
-
-/// @endcond
-
-/// @file
 namespace flatbuffers {
-
-/// @cond FLATBUFFERS_INTERNAL
-// Our default offset / size type, 32bit on purpose on 64bit systems.
-// Also, using a consistent offset type maintains compatibility of serialized
-// offset values between 32bit and 64bit systems.
-typedef uint32_t uoffset_t;
-
-// Signed offsets for references that can go in both directions.
-typedef int32_t soffset_t;
-
-// Offset/index used in v-tables, can be changed to uint8_t in
-// format forks to save a bit of space if desired.
-typedef uint16_t voffset_t;
-
-typedef uintmax_t largest_scalar_t;
-
-// In 32bits, this evaluates to 2GB - 1
-#define FLATBUFFERS_MAX_BUFFER_SIZE ((1ULL << (sizeof(soffset_t) * 8 - 1)) - 1)
-
-// We support aligning the contents of buffers up to this size.
-#define FLATBUFFERS_MAX_ALIGNMENT 16
-
 // Wrapper for uoffset_t to allow safe template specialization.
 // Value is allowed to be 0 to indicate a null object (see e.g. AddOffset).
 template<typename T> struct Offset {
@@ -214,23 +69,7 @@ template<typename T> T EndianSwap(T t) {
   }
 }
 
-template<typename T> T EndianScalar(T t) {
-  #if FLATBUFFERS_LITTLEENDIAN
-    return t;
-  #else
-    return EndianSwap(t);
-  #endif
-}
-
-template<typename T> T ReadScalar(const void *p) {
-  return EndianScalar(*reinterpret_cast<const T *>(p));
-}
-
-template<typename T> void WriteScalar(void *p, T t) {
-  *reinterpret_cast<T *>(p) = EndianScalar(t);
-}
-
-template<typename T> size_t AlignOf() {
+template<typename T> FLATBUFFERS_CONSTEXPR size_t AlignOf() {
   #ifdef _MSC_VER
     return __alignof(T);
   #else
@@ -279,18 +118,16 @@ template<typename T> struct IndirectHelper<const T *> {
 // An STL compatible iterator implementation for Vector below, effectively
 // calling Get() for every element.
 template<typename T, typename IT>
-struct VectorIterator
-    : public std::iterator<std::random_access_iterator_tag, IT, uoffset_t> {
+struct VectorIterator {
+  typedef std::random_access_iterator_tag iterator_category;
+  typedef IT value_type;
+  typedef uoffset_t difference_type;
+  typedef IT *pointer;
+  typedef IT &reference;
 
-  typedef std::iterator<std::random_access_iterator_tag, IT, uoffset_t> super_type;
-
-public:
   VectorIterator(const uint8_t *data, uoffset_t i) :
       data_(data + IndirectHelper<T>::element_stride * i) {}
   VectorIterator(const VectorIterator &other) : data_(other.data_) {}
-  #ifndef FLATBUFFERS_CPP98_STL
-  VectorIterator(VectorIterator &&other) : data_(std::move(other.data_)) {}
-  #endif
 
   VectorIterator &operator=(const VectorIterator &other) {
     data_ = other.data_;
@@ -318,11 +155,11 @@ public:
     return (data_ - other.data_) / IndirectHelper<T>::element_stride;
   }
 
-  typename super_type::value_type operator *() const {
+  IT operator *() const {
     return IndirectHelper<T>::Read(data_, 0);
   }
 
-  typename super_type::value_type operator->() const {
+  IT operator->() const {
     return IndirectHelper<T>::Read(data_, 0);
   }
 
@@ -615,27 +452,27 @@ class DetachedBuffer {
   }
 
   ~DetachedBuffer() {
-    if (buf_ != nullptr) {
-      assert(allocator_ != nullptr);
+    if (buf_) {
+      assert(allocator_);
       allocator_->deallocate(buf_, reserved_);
     }
-    if (own_allocator_ && allocator_ != nullptr) {
+    if (own_allocator_ && allocator_) {
       delete allocator_;
     }
   }
 
   const uint8_t *data() const {
-    assert(cur_ != nullptr);
+    assert(cur_);
     return cur_;
   }
 
   uint8_t *data() {
-    assert(cur_ != nullptr);
+    assert(cur_);
     return cur_;
   }
 
   size_t size() const {
-    assert(cur_ != nullptr);
+    assert(cur_);
     return size_;
   }
 
@@ -680,29 +517,39 @@ class vector_downward {
                            Allocator *allocator = nullptr,
                            bool own_allocator = false)
     : allocator_(allocator ? allocator : &DefaultAllocator::instance()),
-      own_allocator_(own_allocator),
-      reserved_((initial_size + sizeof(largest_scalar_t) - 1) &
-                ~(sizeof(largest_scalar_t) - 1)),
-      buf_(allocator_->allocate(reserved_)), cur_(buf_ + reserved_) {
+      own_allocator_(own_allocator), initial_size_(initial_size), reserved_(0),
+      buf_(nullptr), cur_(nullptr) {
     assert(allocator_);
   }
 
   ~vector_downward() {
-    if (buf_ != nullptr) {
-      assert(allocator_ != nullptr);
+    if (buf_) {
+      assert(allocator_);
       allocator_->deallocate(buf_, reserved_);
     }
-    if (own_allocator_ && allocator_ != nullptr) {
+    if (own_allocator_ && allocator_) {
       delete allocator_;
     }
   }
 
-  void clear() {
-    if (buf_ == nullptr) {
-      assert(allocator_ != nullptr);
-      buf_ = allocator_->allocate(reserved_);
+  void reset() {
+    if (buf_) {
+      assert(allocator_);
+      allocator_->deallocate(buf_, reserved_);
     }
-    cur_ = buf_ + reserved_;
+    reserved_ = 0;
+    buf_ = nullptr;
+    cur_ = nullptr;
+  }
+
+  void clear() {
+    if (buf_) {
+      cur_ = buf_ + reserved_;
+    } else {
+      reserved_ = 0;
+      buf_ = nullptr;
+      cur_ = nullptr;
+    }
   }
 
   // Relinquish the pointer to the caller.
@@ -718,10 +565,12 @@ class vector_downward {
   }
 
   size_t growth_policy(size_t bytes) {
-    return (bytes / 2) & ~(sizeof(largest_scalar_t) - 1);
+    return (bytes == 0) ? initial_size_
+                        : ((bytes / 2) & ~(AlignOf<largest_scalar_t>() - 1));
   }
 
   uint8_t *make_space(size_t len) {
+    assert(cur_ >= buf_);
     if (len > static_cast<size_t>(cur_ - buf_)) {
       reallocate(len);
     }
@@ -732,13 +581,23 @@ class vector_downward {
     return cur_;
   }
 
+  Allocator &get_allocator() { return *allocator_; }
+
   uoffset_t size() const {
-    assert(cur_ != nullptr && buf_ != nullptr);
     return static_cast<uoffset_t>(reserved_ - (cur_ - buf_));
   }
 
+  uoffset_t capacity() const {
+    return reserved_;
+  }
+
+  uint8_t *buf() const {
+    assert(buf_);
+    return buf_;
+  }
+
   uint8_t *data() const {
-    assert(cur_ != nullptr);
+    assert(cur_);
     return cur_;
   }
 
@@ -777,18 +636,23 @@ class vector_downward {
 
   Allocator *allocator_;
   bool own_allocator_;
+  size_t initial_size_;
   size_t reserved_;
   uint8_t *buf_;
   uint8_t *cur_;  // Points at location between empty (below) and used (above).
 
   void reallocate(size_t len) {
-    size_t old_reserved = reserved_;
+    assert(allocator_);
+    auto old_reserved = reserved_;
     auto old_size = size();
-    auto largest_align = AlignOf<largest_scalar_t>();
-    reserved_ += (std::max)(len, growth_policy(reserved_));
-    // Round up to avoid undefined behavior from unaligned loads and stores.
-    reserved_ = (reserved_ + (largest_align - 1)) & ~(largest_align - 1);
-    buf_ = allocator_->reallocate_downward(buf_, old_reserved, reserved_);
+    reserved_ += (std::max)(len, growth_policy(old_reserved));
+    FLATBUFFERS_CONSTEXPR size_t alignment = AlignOf<largest_scalar_t>();
+    reserved_ = (reserved_ + alignment - 1) & ~(alignment - 1);
+    if (buf_) {
+      buf_ = allocator_->reallocate_downward(buf_, old_reserved, reserved_);
+    } else {
+      buf_ = allocator_->allocate(reserved_);
+    }
     cur_ = buf_ + reserved_ - old_size;
   }
 };
@@ -798,13 +662,6 @@ inline voffset_t FieldIndexToOffset(voffset_t field_id) {
   // Should correspond to what EndTable() below builds up.
   const int fixed_fields = 2;  // Vtable size and Object Size.
   return static_cast<voffset_t>((field_id + fixed_fields) * sizeof(voffset_t));
-}
-
-// Computes how many bytes you'd have to pad to be able to write an
-// "scalar_size" scalar if the buffer had grown to "buf_size" (downwards in
-// memory).
-inline size_t PaddingBytes(size_t buf_size, size_t scalar_size) {
-  return ((~buf_size) + 1) & (scalar_size - 1);
 }
 
 template <typename T> const T* data(const std::vector<T> &v) {
@@ -826,9 +683,6 @@ template <typename T> T* data(std::vector<T> &v) {
 /// `CreateVector` functions. Do this is depth-first order to build up a tree to
 /// the root. `Finish()` wraps up the buffer ready for transport.
 class FlatBufferBuilder
-/// @cond FLATBUFFERS_INTERNAL
-FLATBUFFERS_FINAL_CLASS
-/// @endcond
 {
  public:
   /// @brief Default constructor for FlatBufferBuilder.
@@ -838,7 +692,7 @@ FLATBUFFERS_FINAL_CLASS
   /// a `DefaultAllocator`.
   /// @param[in] own_allocator Whether the builder/vector should own the
   /// allocator. Defaults to / `false`.
-  explicit FlatBufferBuilder(uoffset_t initial_size = 1024,
+  explicit FlatBufferBuilder(size_t initial_size = 1024,
                              Allocator *allocator = nullptr,
                              bool own_allocator = false)
     : buf_(initial_size, allocator, own_allocator), nested(false),
@@ -851,6 +705,11 @@ FLATBUFFERS_FINAL_CLASS
 
   ~FlatBufferBuilder() {
     if (string_pool) delete string_pool;
+  }
+
+  void Reset() {
+    Clear();  // clear builder state
+    buf_.reset();  // deallocate buffer
   }
 
   /// @brief Reset all the state in this FlatBufferBuilder so it can be reused
@@ -1563,7 +1422,7 @@ FLATBUFFERS_FINAL_CLASS
     Finish(root.o, file_identifier, true);
   }
 
- private:
+ protected:
   // You shouldn't really be copying instances of this class.
   FlatBufferBuilder(const FlatBufferBuilder &);
   FlatBufferBuilder &operator=(const FlatBufferBuilder &);
